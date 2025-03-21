@@ -138,25 +138,8 @@ class MMPoseInferencer(BaseMMPoseInferencer):
         out_dir: Optional[str] = None,
         **kwargs,
     ) -> dict:
-        """Call the inferencer.
-
-        Args:
-            inputs (InputsType): Inputs for the inferencer.
-            return_datasamples (bool): Whether to return results as
-                :obj:`BaseDataElement`. Defaults to False.
-            batch_size (int): Batch size. Defaults to 1.
-            out_dir (str, optional): directory to save visualization
-                results and predictions. Will be overoden if vis_out_dir or
-                pred_out_dir are given. Defaults to None
-            **kwargs: Key words arguments passed to :meth:`preprocess`,
-                :meth:`forward`, :meth:`visualize` and :meth:`postprocess`.
-                Each key in kwargs should be in the corresponding set of
-                ``preprocess_kwargs``, ``forward_kwargs``,
-                ``visualize_kwargs`` and ``postprocess_kwargs``.
-
-        Returns:
-            dict: Inference and visualization results.
-        """
+        """Call the inferencer."""
+        
         if out_dir is not None:
             if 'vis_out_dir' not in kwargs:
                 kwargs['vis_out_dir'] = f'{out_dir}/visualizations'
@@ -184,10 +167,6 @@ class MMPoseInferencer(BaseMMPoseInferencer):
         if isinstance(inputs, str) and inputs.startswith('webcam'):
             inputs = self.inferencer._get_webcam_inputs(inputs)
             batch_size = 1
-            if not visualize_kwargs.get('show', False):
-                warnings.warn('The display mode is closed when using webcam '
-                              'input. It will be turned on automatically.')
-            visualize_kwargs['show'] = True
         else:
             inputs = self.inferencer._inputs_to_list(inputs)
         self._video_input = self.inferencer._video_input
@@ -206,12 +185,10 @@ class MMPoseInferencer(BaseMMPoseInferencer):
         for proc_inputs, ori_inputs in (track(inputs, description='Inference')
                                         if self.show_progress else inputs):
             preds = self.forward(proc_inputs, **forward_kwargs)
-
-            visualization = self.visualize(ori_inputs, preds,
-                                           **visualize_kwargs)
+            vis_results = self.visualize(ori_inputs, preds, **visualize_kwargs)
             results = self.postprocess(
                 preds,
-                visualization,
+                vis_results,
                 return_datasamples=return_datasamples,
                 **postprocess_kwargs)
             yield results
@@ -248,3 +225,52 @@ class MMPoseInferencer(BaseMMPoseInferencer):
 
         return self.inferencer.visualize(
             inputs, preds, window_name=window_name, **kwargs)
+
+    def _process_det_results(self, det_results):
+        """Process detection results."""
+        if isinstance(det_results, tuple):
+            det_results = det_results[0]
+        if len(det_results) == 0:
+            return []
+
+        if isinstance(det_results[0], (list, tuple)):
+            return det_results
+        else:
+            return [det_results]
+
+    def _predict_single(self, inputs: Union[str, np.ndarray],
+                       return_datasamples: bool = False) -> dict:
+        """Predict a single image."""
+        import time
+
+        # Inference
+        start_time = time.time()
+        data_samples = self.detector.predict(inputs)
+        det_time = time.time() - start_time
+
+        # Process detection results
+        det_results = []
+        for data_sample in data_samples:
+            det_results.append(data_sample.pred_instances)
+
+        det_results = self._process_det_results(det_results)
+
+        # Run pose estimation
+        pose_start_time = time.time()
+        batch_results = []
+        for det_result in det_results:
+            if len(det_result) > 0:
+                pose_results = self.pose_estimator.predict(inputs, det_result)
+                for pose_result in pose_results:
+                    pose_result.update({'time': det_time + (time.time() - pose_start_time)})
+                batch_results.append(pose_results)
+            else:
+                batch_results.append([])
+
+        # Convert results
+        results = defaultdict(list)
+        for data_sample, pose_results in zip(data_samples, batch_results):
+            result = self._get_prediction_by_keys(data_sample, pose_results)
+            for key in result:
+                results[key].append(result[key])
+        return results

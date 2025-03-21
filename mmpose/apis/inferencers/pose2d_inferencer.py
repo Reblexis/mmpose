@@ -209,54 +209,22 @@ class Pose2DInferencer(BaseMMPoseInferencer):
 
         return data_infos
 
+    def _merge_results(self, data_samples):
+        """Merge data samples."""
+        return [merge_data_samples(data_samples)]
+
     @torch.no_grad()
-    def forward(self,
-                inputs: Union[dict, tuple],
-                merge_results: bool = True,
-                bbox_thr: float = -1,
-                pose_based_nms: bool = False):
-        """Performs a forward pass through the model.
-
-        Args:
-            inputs (Union[dict, tuple]): The input data to be processed. Can
-                be either a dictionary or a tuple.
-            merge_results (bool, optional): Whether to merge data samples,
-                default to True. This is only applicable when the data_mode
-                is 'topdown'.
-            bbox_thr (float, optional): A threshold for the bounding box
-                scores. Bounding boxes with scores greater than this value
-                will be retained. Default value is -1 which retains all
-                bounding boxes.
-
-        Returns:
-            A list of data samples with prediction instances.
-        """
+    def forward(self, inputs: Union[str, np.ndarray], **kwargs) -> Dict:
+        """Forward the inputs to the model."""
+        import time
+        
+        # Time only the model's test_step (pure pose detection)
+        start_time = time.time()
         data_samples = self.model.test_step(inputs)
-        if self.cfg.data_mode == 'topdown' and merge_results:
-            data_samples = [merge_data_samples(data_samples)]
-
-        if bbox_thr > 0:
-            for ds in data_samples:
-                if 'bbox_scores' in ds.pred_instances:
-                    ds.pred_instances = ds.pred_instances[
-                        ds.pred_instances.bbox_scores > bbox_thr]
-
-        if pose_based_nms:
-            for ds in data_samples:
-                if len(ds.pred_instances) == 0:
-                    continue
-
-                kpts = ds.pred_instances.keypoints
-                scores = ds.pred_instances.bbox_scores
-                num_keypoints = kpts.shape[-2]
-
-                kept_indices = nearby_joints_nms(
-                    [
-                        dict(keypoints=kpts[i], score=scores[i])
-                        for i in range(len(kpts))
-                    ],
-                    num_nearby_joints_thr=num_keypoints // 3,
-                )
-                ds.pred_instances = ds.pred_instances[kept_indices]
-
+        
+        if self.cfg.data_mode == 'topdown' and kwargs.get('merge_results', True):
+            data_samples = self._merge_results(data_samples)
+        inference_time = time.time() - start_time
+        print(f"Pure pose detection time: {inference_time:.4f} seconds (FPS: {1/inference_time:.1f})")
+            
         return data_samples

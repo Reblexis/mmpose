@@ -3,6 +3,10 @@ from argparse import ArgumentParser
 from typing import Dict
 
 from mmpose.apis.inferencers import MMPoseInferencer, get_model_aliases
+import time
+import cv2
+import numpy as np
+from mmengine.logging import print_log
 
 filter_args = dict(bbox_thr=0.3, nms_thr=0.3, pose_based_nms=False)
 POSE2D_SPECIFIC_ARGS = dict(
@@ -214,8 +218,23 @@ def main():
         display_model_aliases(model_alises)
     else:
         inferencer = MMPoseInferencer(**init_args)
-        for _ in inferencer(**call_args):
-            pass
+        
+        # Enable visualization but disable text overlay
+        call_args['show'] = True
+        call_args['return_vis'] = True
+        
+        # Process frames for timing measurement
+        inference_args = dict(
+            inputs=call_args['inputs'],
+            show=True,
+            return_vis=True)
+
+        # Run inference and show visualization
+        for results in inferencer(**inference_args):
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+        cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':
