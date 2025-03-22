@@ -1,8 +1,8 @@
 _base_ = ['../../../_base_/default_runtime.py']
 
 # runtime
-max_epochs = 60
-stage2_num_epochs = 10
+max_epochs = 180
+stage2_num_epochs = 30
 base_lr = 4e-3
 
 train_cfg = dict(max_epochs=max_epochs, val_interval=1)
@@ -184,7 +184,7 @@ train_dataloader = dict(
         type=dataset_type,
         data_root=data_root,
         data_mode=data_mode,
-        ann_file='annotations/coco_wholebody_train_v1.0.json',
+        ann_file='annotations/coco_wholebody_train_v1.0_filtered_4-7.json',
         data_prefix=dict(img='train2017/'),
         pipeline=train_pipeline,
     ))
@@ -198,7 +198,7 @@ val_dataloader = dict(
         type=dataset_type,
         data_root=data_root,
         data_mode=data_mode,
-        ann_file='annotations/coco_wholebody_val_v1.0.json',
+        ann_file='annotations/coco_wholebody_val_v1.0_filtered_4-7.json',
         data_prefix=dict(img='val2017/'),
         test_mode=True,
         pipeline=val_pipeline,
